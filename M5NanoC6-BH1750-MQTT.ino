@@ -16,9 +16,11 @@ static constexpr int I2C_SCL_PIN = 1;
 // ===== MQTT =====
 static constexpr const char* MQTT_BROKER = "192.168.3.82";
 static constexpr uint16_t MQTT_PORT = 1883;
-static constexpr const char* MQTT_TOPIC_LUX = "home/lux";
-static constexpr const char* MQTT_TOPIC_META = "home/lux_meta";
-static constexpr const char* MQTT_TOPIC_STATUS = "home/lux_status";
+
+static constexpr const char* MQTT_TOPIC_LUX_RAW    = "home/env/lux/raw";
+static constexpr const char* MQTT_TOPIC_LUX_META   = "home/env/lux/meta";
+static constexpr const char* MQTT_TOPIC_LUX_STATUS = "home/env/lux/status";
+
 static constexpr const char* MQTT_CLIENT_ID = "m5nanoc6_bh1750_lux";
 
 // ===== Sensor =====
@@ -44,10 +46,12 @@ uint32_t lastPublishMs = 0;
 float luxHistory[HISTORY_SIZE] = {0};
 size_t historyCount = 0;
 size_t historyIndex = 0;
+
 uint32_t sequenceNo = 0;
 uint32_t sensorErrorCount = 0;
 uint32_t mqttReconnectCount = 0;
 uint32_t wifiReconnectCount = 0;
+
 bool sensorReady = false;
 bool statusDirty = true;
 bool timeValid = false;
@@ -120,10 +124,11 @@ void connectWiFi() {
   Serial.println("[WiFi] Connected");
   Serial.print("[WiFi] IP: ");
   Serial.println(WiFi.localIP());
+
   markStatusDirty();
 }
 
-bool publishOfflineWill() {
+bool connectMQTTWithLastWill() {
   char payload[256];
   snprintf(
       payload,
@@ -140,7 +145,7 @@ bool publishOfflineWill() {
       MQTT_CLIENT_ID,
       nullptr,
       nullptr,
-      MQTT_TOPIC_STATUS,
+      MQTT_TOPIC_LUX_STATUS,
       1,
       true,
       payload);
@@ -152,7 +157,7 @@ void connectMQTT() {
     markStatusDirty();
 
     Serial.printf("[MQTT] Connecting to %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
-    if (publishOfflineWill()) {
+    if (connectMQTTWithLastWill()) {
       Serial.println("[MQTT] Connected");
       markStatusDirty();
       return;
@@ -188,6 +193,7 @@ float readLuxAverage(uint8_t samples = 3, uint16_t sampleDelayMs = 180) {
 void addHistory(float lux) {
   luxHistory[historyIndex] = lux;
   historyIndex = (historyIndex + 1) % HISTORY_SIZE;
+
   if (historyCount < HISTORY_SIZE) {
     ++historyCount;
   }
@@ -244,23 +250,31 @@ const char* classifyTrend(float ratePercent) {
   return "stable";
 }
 
-bool publishLux(float lux, uint32_t unixTime) {
+bool publishLuxRaw(float lux, uint32_t unixTime) {
   char payload[96];
-  snprintf(payload, sizeof(payload), "{\"lux\":%.1f,\"unix_time\":%lu,\"time_valid\":%s}",
+  snprintf(payload, sizeof(payload),
+           "{\"lux\":%.1f,\"unix_time\":%lu,\"time_valid\":%s}",
            lux,
            static_cast<unsigned long>(unixTime),
            timeValid ? "true" : "false");
 
-  bool ok = mqttClient.publish(MQTT_TOPIC_LUX, payload, true);
+  bool ok = mqttClient.publish(MQTT_TOPIC_LUX_RAW, payload, true);
+
   Serial.print("[MQTT] Publish ");
-  Serial.print(MQTT_TOPIC_LUX);
+  Serial.print(MQTT_TOPIC_LUX_RAW);
   Serial.print(" = ");
   Serial.print(payload);
   Serial.println(ok ? " [OK]" : " [FAIL]");
+
   return ok;
 }
 
-bool publishLuxMeta(float currentLux, float movingAverage, float deltaLux, float deltaPrev, float ratePercent, uint32_t unixTime) {
+bool publishLuxMeta(float currentLux,
+                    float movingAverage,
+                    float deltaLux,
+                    float deltaPrev,
+                    float ratePercent,
+                    uint32_t unixTime) {
   char payload[384];
   snprintf(
       payload,
@@ -280,12 +294,14 @@ bool publishLuxMeta(float currentLux, float movingAverage, float deltaLux, float
       static_cast<unsigned long>(unixTime),
       timeValid ? "true" : "false");
 
-  bool ok = mqttClient.publish(MQTT_TOPIC_META, payload, true);
+  bool ok = mqttClient.publish(MQTT_TOPIC_LUX_META, payload, true);
+
   Serial.print("[MQTT] Publish ");
-  Serial.print(MQTT_TOPIC_META);
+  Serial.print(MQTT_TOPIC_LUX_META);
   Serial.print(" = ");
   Serial.print(payload);
   Serial.println(ok ? " [OK]" : " [FAIL]");
+
   return ok;
 }
 
@@ -295,10 +311,12 @@ bool publishLuxStatus(const char* reason) {
   }
 
   uint32_t unixTime = getUnixTime();
+
   char ipBuf[32];
   if (WiFi.status() == WL_CONNECTED) {
     snprintf(ipBuf, sizeof(ipBuf), "%u.%u.%u.%u",
-             WiFi.localIP()[0], WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+             WiFi.localIP()[0], WiFi.localIP()[1],
+             WiFi.localIP()[2], WiFi.localIP()[3]);
   } else {
     snprintf(ipBuf, sizeof(ipBuf), "0.0.0.0");
   }
@@ -323,9 +341,10 @@ bool publishLuxStatus(const char* reason) {
       static_cast<unsigned long>(unixTime),
       timeValid ? "true" : "false");
 
-  bool ok = mqttClient.publish(MQTT_TOPIC_STATUS, payload, true);
+  bool ok = mqttClient.publish(MQTT_TOPIC_LUX_STATUS, payload, true);
+
   Serial.print("[MQTT] Publish ");
-  Serial.print(MQTT_TOPIC_STATUS);
+  Serial.print(MQTT_TOPIC_LUX_STATUS);
   Serial.print(" = ");
   Serial.print(payload);
   Serial.println(ok ? " [OK]" : " [FAIL]");
@@ -333,6 +352,7 @@ bool publishLuxStatus(const char* reason) {
   if (ok) {
     statusDirty = false;
   }
+
   return ok;
 }
 
@@ -346,7 +366,10 @@ void setup() {
   Serial.println();
   Serial.println("========================================");
   Serial.println("M5NanoC6 + BH1750 -> MQTT publisher");
-  Serial.println("Topics: home/lux, home/lux_meta, home/lux_status");
+  Serial.println("Topics:");
+  Serial.println("  home/env/lux/raw");
+  Serial.println("  home/env/lux/meta");
+  Serial.println("  home/env/lux/status");
   Serial.println("Features: NTP, unix_time, Last Will");
   Serial.println("========================================");
 
@@ -427,7 +450,7 @@ void loop() {
       float ratePct = getRatePercent(lux, avg);
       uint32_t unixTime = getUnixTime();
 
-      publishLux(lux, unixTime);
+      publishLuxRaw(lux, unixTime);
       publishLuxMeta(lux, avg, delta, deltaPrev, ratePct, unixTime);
 
       if (statusDirty) {
