@@ -403,6 +403,7 @@ void loop() {
 
   if (!mqttClient.connected()) {
     connectMQTT();
+    publishLuxStatus("mqtt_reconnected");
   }
 
   mqttClient.loop();
@@ -453,9 +454,11 @@ void loop() {
       publishLuxRaw(lux, unixTime);
       publishLuxMeta(lux, avg, delta, deltaPrev, ratePct, unixTime);
 
+      const char* statusReason = "periodic";
       if (statusDirty) {
-        publishLuxStatus("sensor_recovered");
+        statusReason = sensorReady ? "sensor_recovered" : "state_changed";
       }
+      publishLuxStatus(statusReason);
     }
 
     lastPublishMs = now;
