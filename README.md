@@ -2,20 +2,21 @@
 
 **Language:** English | [日本語](README.ja.md)
 
-[統合ハブ](https://github.com/omiya-bonsai/m5papers3-weather-learning-system)
+[Integration Hub](https://github.com/omiya-bonsai/m5papers3-weather-learning-system)
 
-## 概要
+## Overview
 
-M5NanoC6 と M5Stack用環境光センサユニット（BH1750FVI-TR）を使い、
-照度値・メタ情報・状態情報を MQTT で配信します。
+This project uses **M5NanoC6** and an M5Stack ambient light sensor unit
+based on **BH1750FVI-TR** to publish lux values, metadata, and device status to MQTT.
 
-今回追加した要素:
-- `home/lux_status` の Last Will
-- NTP 同期
-- `unix_time` の付与
-- `time_valid` フラグの付与
+This revision adds:
 
-配信トピック:
+- Last Will for `home/lux_status`
+- NTP synchronization
+- `unix_time`
+- `time_valid`
+
+Published topics:
 
 ```text
 home/lux
@@ -25,13 +26,14 @@ home/lux_status
 
 ---
 
-## 今回の変更点
+## Changes In This Revision
 
-### 1. Last Will を追加
-マイコンが無言で落ちた場合、MQTT ブローカーが `home/lux_status` に
-`offline` を retained publish します。
+### 1. Added Last Will
 
-例:
+If the device dies silently, the MQTT broker publishes retained `offline`
+status to `home/lux_status`.
+
+Example:
 
 ```json
 {
@@ -50,31 +52,37 @@ home/lux_status
 }
 ```
 
-これで「値が止まった」のか「マイコンが落ちた」のかを切り分けやすくなります。
+This makes it easier to distinguish between "the value stopped changing" and
+"the device stopped running."
 
-### 2. NTP を追加
-起動時と Wi-Fi 再接続後に NTP 同期します。
+### 2. Added NTP
 
-設定:
+The device synchronizes time at boot and again after Wi-Fi reconnection.
+
+Configured servers:
+
 - `ntp.nict.jp`
 - `pool.ntp.org`
 - JST
 
-### 3. `unix_time` を追加
-publish する payload に Unix time を含めます。
+### 3. Added `unix_time`
 
-### 4. `time_valid` を追加
-NTP が有効かどうかを bool で出します。
+Published payloads now include Unix time.
+
+### 4. Added `time_valid`
+
+The device publishes whether the internal clock is valid.
 
 ---
 
-## トピック仕様
+## Topic Specification
 
 ### `home/lux`
 
-v3 までは単純な数値でしたが、今回は時刻を含めるため JSON に変更しました。
+Until v3, this topic used a plain numeric payload. It now uses JSON so that
+time information can be included.
 
-例:
+Example:
 
 ```json
 {
@@ -86,7 +94,7 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 
 ### `home/lux_meta`
 
-例:
+Example:
 
 ```json
 {
@@ -106,7 +114,7 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 
 ### `home/lux_status`
 
-例:
+Example:
 
 ```json
 {
@@ -127,48 +135,49 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 
 ---
 
-## 率直な注意点
+## Important Note
 
-今回、`home/lux` は JSON に変えています。  
-これは意図的です。
+`home/lux` was intentionally changed to JSON.
 
-理由:
-- ユーザー要望が「トピックの中に unix time を入れたい」だった
-- 単純な数値 payload のままだと時刻を持てない
-- 後で M5PaperS3 側で扱うなら JSON の方が拡張しやすい
+Reason:
 
-ただし、既存の `home/lux` 購読側が「数値だけ」を期待しているなら、そこは壊れます。  
-つまり **互換性より実用性を優先した変更** です。
+- the requirement was to include Unix time in the topic payload
+- a plain numeric payload cannot carry timestamp metadata
+- JSON is more extensible for downstream use on M5PaperS3
 
-もし互換性を維持したいなら、
-- `home/lux` は数値のまま
-- `home/lux_meta` にだけ `unix_time`
-という分離の方が安全です。
+However, if an existing subscriber expects `home/lux` to contain only a raw
+number, this is a breaking change. In that sense, this revision prioritizes
+practicality over backward compatibility.
+
+If compatibility must be preserved, a safer alternative would be:
+
+- keep `home/lux` as a plain number
+- put `unix_time` only in `home/lux_meta`
 
 ---
 
-## 今回含めている機能
+## Included Features
 
 - `home/lux`
 - `home/lux_meta`
 - `home/lux_status`
-- 移動平均
-- 前回との差分
-- 移動平均との差分
-- 変化率
-- トレンド判定
-- 連番
+- moving average
+- delta from previous value
+- delta from moving average
+- rate of change
+- trend classification
+- sequence counter
 - retained publish
-- NTP 同期
-- Unix time 付与
-- time_valid
-- Last Will offline 通知
-- センサ失敗カウント
-- Wi-Fi / MQTT 再接続カウント
+- NTP synchronization
+- Unix time
+- `time_valid`
+- Last Will offline notification
+- sensor failure count
+- Wi-Fi / MQTT reconnect counters
 
 ---
 
-## 配線
+## Wiring
 
 M5NanoC6 HY2.0-4P (Grove):
 
@@ -181,16 +190,16 @@ Wire.begin(2, 1);
 
 ---
 
-## 必要ライブラリ
+## Required Libraries
 
-Arduino IDE の Library Manager:
+Install these from the Arduino IDE Library Manager:
 
 - `PubSubClient`
 - `BH1750`
 
 ---
 
-## 設定ファイル
+## Configuration File
 
 `config.h`:
 
@@ -203,7 +212,7 @@ static constexpr uint16_t MQTT_PORT = 1883;
 
 ---
 
-## 確認コマンド
+## Verification Command
 
 ```bash
 mosquitto_sub -h broker.local -t "home/lux#" -v
@@ -211,12 +220,12 @@ mosquitto_sub -h broker.local -t "home/lux#" -v
 
 ---
 
-## 次に確認すべきこと
+## Things To Check Next
 
-1. 起動時に `home/lux_status` へ `boot` が出るか
-2. `home/lux_status` に `unix_time` が入っているか
-3. Wi-Fi を切ったときに復帰後 NTP が再同期されるか
-4. 強制リセットや電断時に Last Will の `offline` が出るか
+1. Confirm that `boot` is published to `home/lux_status` at startup.
+2. Confirm that `unix_time` appears in `home/lux_status`.
+3. Confirm that NTP re-sync runs after Wi-Fi recovery.
+4. Confirm that Last Will publishes `offline` after forced reset or power loss.
 
 ---
 
