@@ -111,7 +111,7 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
   "status": "ok",
   "reason": "boot",
   "wifi": "connected",
-  "ip": "192.168.3.120",
+  "ip": "192.168.0.2",
   "sensor_ready": true,
   "sensor_error_count": 0,
   "wifi_reconnect_count": 1,
@@ -195,6 +195,8 @@ Arduino IDE の Library Manager:
 ```cpp
 static constexpr const char* WIFI_SSID = "YOUR_WIFI_SSID";
 static constexpr const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+static constexpr const char* MQTT_BROKER = "broker.local";
+static constexpr uint16_t MQTT_PORT = 1883;
 ```
 
 ---
@@ -202,7 +204,7 @@ static constexpr const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 ## 確認コマンド
 
 ```bash
-mosquitto_sub -h 192.168.3.82 -t "home/lux#" -v
+mosquitto_sub -h broker.local -t "home/lux#" -v
 ```
 
 ---

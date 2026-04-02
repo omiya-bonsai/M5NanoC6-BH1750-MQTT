@@ -14,9 +14,6 @@ static constexpr int I2C_SDA_PIN = 2;
 static constexpr int I2C_SCL_PIN = 1;
 
 // ===== MQTT =====
-static constexpr const char* MQTT_BROKER = "192.168.3.82";
-static constexpr uint16_t MQTT_PORT = 1883;
-
 static constexpr const char* MQTT_TOPIC_LUX_RAW    = "home/env/lux/raw";
 static constexpr const char* MQTT_TOPIC_LUX_META   = "home/env/lux/meta";
 static constexpr const char* MQTT_TOPIC_LUX_STATUS = "home/env/lux/status";
