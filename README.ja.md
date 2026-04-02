@@ -1,15 +1,16 @@
 # M5NanoC6 + BH1750 MQTT Publisher v4
 
-**Language:** English | [日本語](README.ja.md)
+**言語:** 日本語 | [English](README.md)
 
 [統合ハブ](https://github.com/omiya-bonsai/m5papers3-weather-learning-system)
 
 ## 概要
 
-M5NanoC6 と M5Stack用環境光センサユニット（BH1750FVI-TR）を使い、
+M5NanoC6 と M5Stack 用環境光センサユニット（BH1750FVI-TR）を使い、
 照度値・メタ情報・状態情報を MQTT で配信します。
 
 今回追加した要素:
+
 - `home/lux_status` の Last Will
 - NTP 同期
 - `unix_time` の付与
@@ -28,6 +29,7 @@ home/lux_status
 ## 今回の変更点
 
 ### 1. Last Will を追加
+
 マイコンが無言で落ちた場合、MQTT ブローカーが `home/lux_status` に
 `offline` を retained publish します。
 
@@ -53,17 +55,21 @@ home/lux_status
 これで「値が止まった」のか「マイコンが落ちた」のかを切り分けやすくなります。
 
 ### 2. NTP を追加
+
 起動時と Wi-Fi 再接続後に NTP 同期します。
 
 設定:
+
 - `ntp.nict.jp`
 - `pool.ntp.org`
 - JST
 
 ### 3. `unix_time` を追加
+
 publish する payload に Unix time を含めます。
 
 ### 4. `time_valid` を追加
+
 NTP が有効かどうかを bool で出します。
 
 ---
@@ -127,12 +133,13 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 
 ---
 
-## 率直な注意点
+## 注意点
 
 今回、`home/lux` は JSON に変えています。  
 これは意図的です。
 
 理由:
+
 - ユーザー要望が「トピックの中に unix time を入れたい」だった
 - 単純な数値 payload のままだと時刻を持てない
 - 後で M5PaperS3 側で扱うなら JSON の方が拡張しやすい
@@ -141,8 +148,10 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 つまり **互換性より実用性を優先した変更** です。
 
 もし互換性を維持したいなら、
+
 - `home/lux` は数値のまま
 - `home/lux_meta` にだけ `unix_time`
+
 という分離の方が安全です。
 
 ---
@@ -161,7 +170,7 @@ v3 までは単純な数値でしたが、今回は時刻を含めるため JSON
 - retained publish
 - NTP 同期
 - Unix time 付与
-- time_valid
+- `time_valid`
 - Last Will offline 通知
 - センサ失敗カウント
 - Wi-Fi / MQTT 再接続カウント
@@ -220,6 +229,6 @@ mosquitto_sub -h broker.local -t "home/lux#" -v
 
 ---
 
-## License
+## ライセンス
 
-- Project license: [MIT](./LICENSE)
+- プロジェクトライセンス: [MIT](./LICENSE)
