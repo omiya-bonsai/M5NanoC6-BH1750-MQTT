@@ -7,7 +7,7 @@
 ## Overview
 
 This project uses **M5NanoC6** and an M5Stack ambient light sensor unit
-based on **BH1750FVI-TR** to publish lux values, metadata, and device status to MQTT.
+based on **BH1750FVI-TR** to publish lux values, metadata, delta windows, and device status to MQTT.
 
 This revision adds:
 
@@ -15,13 +15,15 @@ This revision adds:
 - NTP synchronization
 - `unix_time`
 - `time_valid`
+- short/mid/long delta windows
 
 Published topics:
 
 ```text
-home/lux
-home/lux_meta
-home/lux_status
+home/env/lux/raw
+home/env/lux/meta
+home/env/lux/delta_windows
+home/env/lux/status
 ```
 
 ---
@@ -31,7 +33,7 @@ home/lux_status
 ### 1. Added Last Will
 
 If the device dies silently, the MQTT broker publishes retained `offline`
-status to `home/lux_status`.
+status to `home/env/lux/status`.
 
 Example:
 
@@ -73,11 +75,19 @@ Published payloads now include Unix time.
 
 The device publishes whether the internal clock is valid.
 
+### 5. Added delta windows (`short/mid/long`)
+
+The device publishes multi-window lux deltas to a new topic:
+
+- short window: 30 sec (`1` step)
+- mid window: 120 sec (`4` steps)
+- long window: 300 sec (`10` steps)
+
 ---
 
 ## Topic Specification
 
-### `home/lux`
+### `home/env/lux/raw`
 
 Until v3, this topic used a plain numeric payload. It now uses JSON so that
 time information can be included.
@@ -92,7 +102,7 @@ Example:
 }
 ```
 
-### `home/lux_meta`
+### `home/env/lux/meta`
 
 Example:
 
@@ -112,7 +122,33 @@ Example:
 }
 ```
 
-### `home/lux_status`
+### `home/env/lux/delta_windows`
+
+Example:
+
+```json
+{
+  "lux": 1234.5,
+  "delta_short": -12.3,
+  "delta_mid": 85.4,
+  "delta_long": 140.1,
+  "short_steps": 1,
+  "mid_steps": 4,
+  "long_steps": 10,
+  "short_sec": 30,
+  "mid_sec": 120,
+  "long_sec": 300,
+  "history_count": 12,
+  "interval_ms": 30000,
+  "seq": 42,
+  "unix_time": 1743476400,
+  "time_valid": true
+}
+```
+
+When not enough history is available, `delta_*` may be `null`.
+
+### `home/env/lux/status`
 
 Example:
 
@@ -137,7 +173,7 @@ Example:
 
 ## Important Note
 
-`home/lux` was intentionally changed to JSON.
+`home/env/lux/raw` was intentionally changed to JSON.
 
 Reason:
 
@@ -151,21 +187,23 @@ practicality over backward compatibility.
 
 If compatibility must be preserved, a safer alternative would be:
 
-- keep `home/lux` as a plain number
-- put `unix_time` only in `home/lux_meta`
+- keep `home/env/lux/raw` as a plain number
+- put `unix_time` only in `home/env/lux/meta`
 
 ---
 
 ## Included Features
 
-- `home/lux`
-- `home/lux_meta`
-- `home/lux_status`
+- `home/env/lux/raw`
+- `home/env/lux/meta`
+- `home/env/lux/delta_windows`
+- `home/env/lux/status`
 - moving average
 - delta from previous value
 - delta from moving average
 - rate of change
 - trend classification
+- short/mid/long delta windows
 - sequence counter
 - retained publish
 - NTP synchronization
@@ -215,17 +253,18 @@ static constexpr uint16_t MQTT_PORT = 1883;
 ## Verification Command
 
 ```bash
-mosquitto_sub -h broker.local -t "home/lux#" -v
+mosquitto_sub -h broker.local -t "home/env/lux/#" -v
 ```
 
 ---
 
 ## Things To Check Next
 
-1. Confirm that `boot` is published to `home/lux_status` at startup.
-2. Confirm that `unix_time` appears in `home/lux_status`.
-3. Confirm that NTP re-sync runs after Wi-Fi recovery.
-4. Confirm that Last Will publishes `offline` after forced reset or power loss.
+1. Confirm that `boot` is published to `home/env/lux/status` at startup.
+2. Confirm that `unix_time` appears in `home/env/lux/status`.
+3. Confirm that `home/env/lux/delta_windows` publishes `delta_short`, `delta_mid`, `delta_long`.
+4. Confirm that NTP re-sync runs after Wi-Fi recovery.
+5. Confirm that Last Will publishes `offline` after forced reset or power loss.
 
 ---
 
