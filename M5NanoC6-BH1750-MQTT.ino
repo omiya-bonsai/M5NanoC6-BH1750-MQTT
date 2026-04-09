@@ -16,6 +16,7 @@ static constexpr int I2C_SCL_PIN = 1;
 // ===== MQTT =====
 static constexpr const char* MQTT_TOPIC_LUX_RAW    = "home/env/lux/raw";
 static constexpr const char* MQTT_TOPIC_LUX_META   = "home/env/lux/meta";
+static constexpr const char* MQTT_TOPIC_LUX_DELTA_WINDOWS = "home/env/lux/delta_windows";
 static constexpr const char* MQTT_TOPIC_LUX_STATUS = "home/env/lux/status";
 
 static constexpr const char* MQTT_CLIENT_ID = "m5nanoc6_bh1750_lux";
@@ -33,6 +34,9 @@ static constexpr uint32_t NTP_SYNC_TIMEOUT_MS = 15000;
 // ===== Meta / filtering =====
 static constexpr size_t HISTORY_SIZE = 12;
 static constexpr float INVALID_LUX = -1.0f;
+static constexpr size_t DELTA_SHORT_STEPS = 1;   // 30 sec
+static constexpr size_t DELTA_MID_STEPS = 4;     // 120 sec
+static constexpr size_t DELTA_LONG_STEPS = 10;   // 300 sec
 
 // ===== Globals =====
 WiFiClient wifiClient;
@@ -217,6 +221,15 @@ float getPreviousLux() {
   return luxHistory[prevIndex];
 }
 
+float getHistoryLux(size_t stepsBack) {
+  if (historyCount == 0 || stepsBack >= historyCount) {
+    return INVALID_LUX;
+  }
+  size_t latestIndex = (historyIndex + HISTORY_SIZE - 1) % HISTORY_SIZE;
+  size_t targetIndex = (latestIndex + HISTORY_SIZE - (stepsBack % HISTORY_SIZE)) % HISTORY_SIZE;
+  return luxHistory[targetIndex];
+}
+
 float getDeltaLux(float currentLux, float movingAverage) {
   if (currentLux < 0.0f || movingAverage < 0.0f) {
     return INVALID_LUX;
@@ -302,6 +315,63 @@ bool publishLuxMeta(float currentLux,
   return ok;
 }
 
+bool publishLuxDeltaWindows(float currentLux, uint32_t unixTime) {
+  float baseShort = getHistoryLux(DELTA_SHORT_STEPS);
+  float baseMid = getHistoryLux(DELTA_MID_STEPS);
+  float baseLong = getHistoryLux(DELTA_LONG_STEPS);
+
+  float deltaShort = getDeltaFromPrevious(currentLux, baseShort);
+  float deltaMid = getDeltaFromPrevious(currentLux, baseMid);
+  float deltaLong = getDeltaFromPrevious(currentLux, baseLong);
+
+  bool hasShort = deltaShort != INVALID_LUX;
+  bool hasMid = deltaMid != INVALID_LUX;
+  bool hasLong = deltaLong != INVALID_LUX;
+
+  char deltaShortBuf[24];
+  char deltaMidBuf[24];
+  char deltaLongBuf[24];
+  snprintf(deltaShortBuf, sizeof(deltaShortBuf), hasShort ? "%.1f" : "null", deltaShort);
+  snprintf(deltaMidBuf, sizeof(deltaMidBuf), hasMid ? "%.1f" : "null", deltaMid);
+  snprintf(deltaLongBuf, sizeof(deltaLongBuf), hasLong ? "%.1f" : "null", deltaLong);
+
+  char payload[512];
+  snprintf(
+      payload,
+      sizeof(payload),
+      "{\"lux\":%.1f,"
+      "\"delta_short\":%s,\"delta_mid\":%s,\"delta_long\":%s,"
+      "\"short_steps\":%u,\"mid_steps\":%u,\"long_steps\":%u,"
+      "\"short_sec\":%lu,\"mid_sec\":%lu,\"long_sec\":%lu,"
+      "\"history_count\":%u,\"interval_ms\":%lu,"
+      "\"seq\":%lu,\"unix_time\":%lu,\"time_valid\":%s}",
+      currentLux,
+      deltaShortBuf,
+      deltaMidBuf,
+      deltaLongBuf,
+      static_cast<unsigned>(DELTA_SHORT_STEPS),
+      static_cast<unsigned>(DELTA_MID_STEPS),
+      static_cast<unsigned>(DELTA_LONG_STEPS),
+      static_cast<unsigned long>((DELTA_SHORT_STEPS * PUBLISH_INTERVAL_MS) / 1000UL),
+      static_cast<unsigned long>((DELTA_MID_STEPS * PUBLISH_INTERVAL_MS) / 1000UL),
+      static_cast<unsigned long>((DELTA_LONG_STEPS * PUBLISH_INTERVAL_MS) / 1000UL),
+      static_cast<unsigned>(historyCount),
+      static_cast<unsigned long>(PUBLISH_INTERVAL_MS),
+      static_cast<unsigned long>(sequenceNo),
+      static_cast<unsigned long>(unixTime),
+      timeValid ? "true" : "false");
+
+  bool ok = mqttClient.publish(MQTT_TOPIC_LUX_DELTA_WINDOWS, payload, true);
+
+  Serial.print("[MQTT] Publish ");
+  Serial.print(MQTT_TOPIC_LUX_DELTA_WINDOWS);
+  Serial.print(" = ");
+  Serial.print(payload);
+  Serial.println(ok ? " [OK]" : " [FAIL]");
+
+  return ok;
+}
+
 bool publishLuxStatus(const char* reason) {
   if (!mqttClient.connected()) {
     return false;
@@ -366,6 +436,7 @@ void setup() {
   Serial.println("Topics:");
   Serial.println("  home/env/lux/raw");
   Serial.println("  home/env/lux/meta");
+  Serial.println("  home/env/lux/delta_windows");
   Serial.println("  home/env/lux/status");
   Serial.println("Features: NTP, unix_time, Last Will");
   Serial.println("========================================");
@@ -450,6 +521,7 @@ void loop() {
 
       publishLuxRaw(lux, unixTime);
       publishLuxMeta(lux, avg, delta, deltaPrev, ratePct, unixTime);
+      publishLuxDeltaWindows(lux, unixTime);
 
       const char* statusReason = "periodic";
       if (statusDirty) {
